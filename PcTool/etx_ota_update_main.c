@@ -11,12 +11,9 @@ compile with the command: gcc etx_ota_update_main.c RS232\rs232.c -IRS232 -Wall 
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <time.h>
 
-#ifdef _WIN32
-#include <Windows.h>
-#else
 #include <unistd.h>
-#endif
 
 #include "rs232.h"
 #include "etx_ota_update_main.h"
@@ -27,19 +24,9 @@ uint8_t APP_BIN[ETX_OTA_MAX_FW_SIZE];
 void delay(uint32_t us)
 {
     us *= 10;
-#ifdef _WIN32
-    //Sleep(ms);
-    __int64 time1 = 0, time2 = 0, freq = 0;
 
-    QueryPerformanceCounter((LARGE_INTEGER *) &time1);
-    QueryPerformanceFrequency((LARGE_INTEGER *)&freq);
-
-    do {
-        QueryPerformanceCounter((LARGE_INTEGER *) &time2);
-    } while((time2-time1) < us);
-#else
     usleep(us);
-#endif
+
 }
 
 /* read the response */
@@ -48,7 +35,7 @@ bool is_ack_resp_received( int comport )
   bool is_ack  = false;
 
   memset(DATA_BUF, 0, ETX_OTA_PACKET_MAX_SIZE);
-
+  
   uint16_t len =  RS232_PollComport( comport, DATA_BUF, sizeof(ETX_OTA_RESP_));
 
   if( len > 0 )
@@ -85,11 +72,19 @@ int send_ota_start(int comport)
   ota_start->eof          = ETX_OTA_EOF;
 
   len = sizeof(ETX_OTA_COMMAND_);
-
+  
+  printf("Start SOF RS232_SendByte: %u\n\r", ota_start->sof);
+  printf("Start Packet Type, %u\n\r", ota_start->packet_type);
+  printf("Start Data Length: %u\n\r", ota_start->data_len);
+  printf("Start Command Type: %u\n\r", ota_start->cmd);
+  printf("Start CR Checksum: %u\n\r", ota_start->crc);
+  printf("Start EOF: %u\n\r", ota_start->eof);
+  
   //send OTA START
+  printf("Send ota start before RS232_SendByte\n\r");
   for(int i = 0; i < len; i++)
   {
-    delay(1);
+    delay(5);
     if( RS232_SendByte(comport, DATA_BUF[i]) )
     {
       //some data missed.
@@ -99,15 +94,17 @@ int send_ota_start(int comport)
     }
   }
 
-  if( ex >= 0 )
+  int count = 0;
+
+  do
   {
-    if( !is_ack_resp_received( comport ) )
+    if( is_ack_resp_received( comport ) )
     {
-      //Received NACK
-      printf("OTA START : NACK\n");
-      ex = -1;
+      break;
     }
-  }
+    count++;
+  }while( (!is_ack_resp_received( comport ))/* && (count< 10000) */);
+
   printf("OTA START [ex = %d]\n", ex);
   return ex;
 }
@@ -133,7 +130,7 @@ uint16_t send_ota_end(int comport)
   //send OTA END
   for(int i = 0; i < len; i++)
   {
-    delay(1);
+    delay(5);
     if( RS232_SendByte(comport, DATA_BUF[i]) )
     {
       //some data missed.
@@ -143,15 +140,17 @@ uint16_t send_ota_end(int comport)
     }
   }
 
-  if( ex >= 0 )
+  int count = 0;
+
+  do
   {
-    if( !is_ack_resp_received( comport ) )
+    if( is_ack_resp_received( comport ) )
     {
-      //Received NACK
-      printf("OTA END : NACK\n");
-      ex = -1;
+      break;
     }
-  }
+    count++;
+  }while( (!is_ack_resp_received( comport )) /*&& (count< 10000) */);
+  
   printf("OTA END [ex = %d]\n", ex);
   return ex;
 }
@@ -171,6 +170,12 @@ int send_ota_header(int comport, meta_info *ota_info)
   ota_header->crc          = 0x00;               //TODO: Add CRC
   ota_header->eof          = ETX_OTA_EOF;
 
+  printf("Header SOF RS232_SendByte: %u\n\r", ota_header->sof);
+  printf("Header Packet Type: %u\n\r", ota_header->packet_type);
+  printf("Header Data Length: %u\n\r", ota_header->data_len);
+  printf("Header CR Checksum: %u\n\r", ota_header->crc);
+  printf("Header EOF: %u\n\r", ota_header->eof);
+
   memcpy(&ota_header->meta_data, ota_info, sizeof(meta_info) );
 
   len = sizeof(ETX_OTA_HEADER_);
@@ -178,7 +183,7 @@ int send_ota_header(int comport, meta_info *ota_info)
   //send OTA Header
   for(int i = 0; i < len; i++)
   {
-    delay(1);
+    delay(5);
     if( RS232_SendByte(comport, DATA_BUF[i]) )
     {
       //some data missed.
@@ -188,15 +193,15 @@ int send_ota_header(int comport, meta_info *ota_info)
     }
   }
 
-  if( ex >= 0 )
+  do
   {
-    if( !is_ack_resp_received( comport ) )
+    if( is_ack_resp_received( comport ) )
     {
-      //Received NACK
-      printf("OTA HEADER : NACK\n");
-      ex = -1;
+      break;
     }
-  }
+  }while( (!is_ack_resp_received( comport )) /*&& (count< 10000)*/ );
+
+
   printf("OTA HEADER [ex = %d]\n", ex);
   return ex;
 }
@@ -213,6 +218,10 @@ int send_ota_data(int comport, uint8_t *data, uint16_t data_len)
   ota_data->sof          = ETX_OTA_SOF;
   ota_data->packet_type  = ETX_OTA_PACKET_TYPE_DATA;
   ota_data->data_len     = data_len;
+
+  printf("Data SOF RS232_SendByte: %u\n\r", ota_data->sof);
+  printf("Data Packet Type: %u\n\r", ota_data->packet_type);
+  printf("Data Data Length: %u\n\r", ota_data->data_len);
 
   len = 4;
 
@@ -234,7 +243,7 @@ int send_ota_data(int comport, uint8_t *data, uint16_t data_len)
   //send OTA Data
   for(int i = 0; i < len; i++)
   {
-    delay(500);
+    delay(5);
     if( RS232_SendByte(comport, DATA_BUF[i]) )
     {
       //some data missed.
@@ -244,22 +253,23 @@ int send_ota_data(int comport, uint8_t *data, uint16_t data_len)
     }
   }
 
-  if( ex >= 0 )
+  do
   {
-    if( !is_ack_resp_received( comport ) )
+    if( is_ack_resp_received( comport ) )
     {
-      //Received NACK
-      printf("OTA DATA : NACK\n");
-      ex = -1;
+      break;
     }
-  }
-  //printf("OTA DATA [ex = %d]\n", ex);
+  }while( (!is_ack_resp_received( comport )));
+
+  printf("OTA DATA [ex = %d]\n", ex);
   return ex;
 }
 
 int main(int argc, char *argv[])
 {
-  int comport;
+  int comport = 0;
+  const char* comport_name;
+
   int bdrate   = 115200;       /* 115200 baud */
   char mode[]={'8','N','1',0}; /* *-bits, No parity, 1 stop bit */
   char bin_name[1024];
@@ -277,18 +287,22 @@ int main(int argc, char *argv[])
     }
 
     //get the COM port Number
-    comport = atoi(argv[1]) -1;
+    //comport = atoi(argv[1]) -1;
+    comport_name = argv[1];
     strcpy(bin_name, argv[2]);
 
-    printf("Opening COM%d...\n", comport+1 );
+    //printf("Opening COM%d...\n", comport+1 );
+    printf("Opening COM%s...\n", comport_name );
 
-    if( RS232_OpenComport(comport, bdrate, mode, 0) )
+    //if( RS232_OpenComport(comport, bdrate, mode, 0) )//
+    if( RS232_OpenComport(comport_name, bdrate, mode, 0) )
     {
       printf("Can not open comport\n");
       ex = -1;
       break;
     }
 
+    //Comport_fd = RS232_GetComport();
     //send OTA Start command
     ex = send_ota_start(comport);
     if( ex < 0 )
@@ -315,11 +329,12 @@ int main(int argc, char *argv[])
     printf("File size = %d\n", app_size);
 
     //Send OTA Header
-    meta_info ota_info;
+    meta_info ota_info;  
     ota_info.package_size = app_size;
     ota_info.package_crc  = 0;          //TODO: Add CRC
 
     ex = send_ota_header( comport, &ota_info );
+
     if( ex < 0 )
     {
       printf("send_ota_header Err\n");

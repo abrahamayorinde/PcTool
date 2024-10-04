@@ -39,8 +39,6 @@ extern "C" {
 
 
 
-#if defined(__linux__) || defined(__FreeBSD__)
-
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -51,13 +49,9 @@ extern "C" {
 #include <sys/file.h>
 #include <errno.h>
 
-#else
 
-#include <windows.h>
-
-#endif
-
-int RS232_OpenComport(int, int, const char *, int);
+int RS232_OpenComport(const char* comport_name, int, const char *, int);
+int RS232_GetComport();
 int RS232_PollComport(int, unsigned char *, int);
 int RS232_SendByte(int, unsigned char);
 int RS232_SendBuf(int, unsigned char *, int);
